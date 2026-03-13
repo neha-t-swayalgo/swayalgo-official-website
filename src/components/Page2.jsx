@@ -24,6 +24,7 @@ const PILLARS = [
   { number: '05', title: 'Independent Pillars',  body: 'AI · IoT · ERP used only where suitable. We never force a tool.' },
   { number: '06', title: 'Right Technology',     body: "We don't force technology. We choose the one that genuinely fits." },
 ];
+
 const TickerRow = ({ onMouseEnter, onMouseLeave }) => (
   <>
     {repeatedClients.map((client, j) => (
@@ -49,47 +50,118 @@ function Page2() {
       el.style.animationPlayState = 'running';
     });
   };
-useEffect(() => {
-  const timer = setTimeout(() => {
-    ScrollTrigger.refresh();
 
-    gsap.to('.why-eyebrow, .why-heading, .why-sub', {
-      y: 0, opacity: 1,
-      duration: 0.75, stagger: 0.14, ease: 'power3.out',
-      scrollTrigger: {
-        trigger: '.why-header',
-        start: 'top 88%',
-        once: true,
-      },
-    });
+  useEffect(() => {
+    // ── KEY FIX: set initial state via gsap.set so GSAP owns the property,
+    // not the CSS. This prevents the "stuck invisible" bug when ScrollTrigger
+    // miscalculates positions on first paint (happens on zoom / font-delay).
+    gsap.set('.why-eyebrow, .why-heading, .why-sub', { y: 30, opacity: 0 });
+    gsap.set('.pillar-card', { y: 40, opacity: 0, scale: 0.97 });
 
-    gsap.to('.why-stat-box', {
-      y: 0, opacity: 1,
-      duration: 0.55, stagger: 0.1, ease: 'power3.out',
-      scrollTrigger: {
-        trigger: '.why-stats-row',
-        start: 'top 88%',
-        once: true,
-      },
-    });
+    const ctx = gsap.context(() => {
 
-    gsap.to('.pillar-card', {
-      y: 0, opacity: 1,
-      duration: 0.65, stagger: 0.08, ease: 'power3.out',
-      scrollTrigger: {
-        trigger: '.pillars-grid',
-        start: 'top 88%',
-        once: true,
-      },
-    });
+      // Header text animation
+      gsap.to('.why-eyebrow, .why-heading, .why-sub', {
+        y: 0,
+        opacity: 1,
+        duration: 0.75,
+        stagger: 0.14,
+        ease: 'power3.out',
+        scrollTrigger: {
+          trigger: '.why-header',
+          start: 'top 90%',
+          once: true,
+          onEnter: (self) => {
+            if (self.progress === 1) {
+              gsap.set('.why-eyebrow, .why-heading, .why-sub', { y: 0, opacity: 1 });
+            }
+          },
+        },
+      });
 
-  }, 120);
+      // Pillar cards entrance animation — slightly more dramatic with scale
+      gsap.to('.pillar-card', {
+        y: 0,
+        opacity: 1,
+        scale: 1,
+        duration: 0.7,
+        stagger: 0.09,
+        ease: 'power3.out',
+        scrollTrigger: {
+          trigger: '.pillars-grid',
+          start: 'top 90%',
+          once: true,
+          onEnter: (self) => {
+            if (self.progress === 1) {
+              gsap.set('.pillar-card', { y: 0, opacity: 1, scale: 1 });
+            }
+          },
+        },
+      });
 
-  return () => {
-    clearTimeout(timer);
-    ScrollTrigger.getAll().forEach(t => t.kill());
-  };
-}, []);
+      // ── MAGNETIC 3D TILT on each pillar card
+      document.querySelectorAll('.pillar-card').forEach((card) => {
+        card.addEventListener('mousemove', (e) => {
+          const rect = card.getBoundingClientRect();
+          const x = ((e.clientX - rect.left) / rect.width  - 0.5) * 14;
+          const y = ((e.clientY - rect.top)  / rect.height - 0.5) * 14;
+          gsap.to(card, {
+            rotateX: -y,
+            rotateY:  x,
+            transformPerspective: 900,
+            duration: 0.35,
+            ease: 'power2.out',
+            overwrite: 'auto',
+          });
+        });
+
+        card.addEventListener('mouseleave', () => {
+          gsap.to(card, {
+            rotateX: 0,
+            rotateY: 0,
+            duration: 0.55,
+            ease: 'power3.out',
+            overwrite: 'auto',
+          });
+        });
+      });
+
+    }, sectionRef);
+
+    // ── KEY FIX: Refresh ScrollTrigger after a short delay to account for
+    // fonts, images, and layout shifts that happen after first paint.
+    const refreshTimer = setTimeout(() => {
+      ScrollTrigger.refresh();
+    }, 300);
+
+    // ── SAFETY NET: If elements are still invisible after 1.5s
+    // (e.g. page loaded already scrolled past them), force-show them.
+    const safetyTimer = setTimeout(() => {
+      const pillars = document.querySelectorAll('.pillar-card');
+      const headers = document.querySelectorAll('.why-eyebrow, .why-heading, .why-sub');
+
+      pillars.forEach(el => {
+        const computed = window.getComputedStyle(el);
+        if (parseFloat(computed.opacity) < 0.1) {
+          gsap.set(el, { y: 0, opacity: 1, scale: 1 });
+        }
+      });
+
+      headers.forEach(el => {
+        const computed = window.getComputedStyle(el);
+        if (parseFloat(computed.opacity) < 0.1) {
+          gsap.set(el, { y: 0, opacity: 1 });
+        }
+      });
+    }, 1500);
+
+    return () => {
+      ctx.revert();
+      clearTimeout(refreshTimer);
+      clearTimeout(safetyTimer);
+    };
+  }, []);
+
   return (
     <div id="page2" ref={sectionRef}>
 
@@ -128,16 +200,21 @@ useEffect(() => {
           </p>
         </div>
 
- 
-
         <div className="pillars-grid">
           {PILLARS.map((p, i) => (
-            <div className="pillar-card" key={p.number}>
+            <div className="pillar-card" key={p.number} style={{ transformStyle: 'preserve-3d' }}>
+              {/* Ghost background number */}
+              <span className="pillar-card-bg-num">{p.number}</span>
+
               <span className="pillar-num" style={{ color: i % 2 === 0 ? '#F5302A' : '#111' }}>
                 {p.number}
               </span>
               <h4 className="pillar-title">{p.title}</h4>
               <p className="pillar-body">{p.body}</p>
+
+              {/* Arrow indicator */}
+              <span className="pillar-arrow">→</span>
+
               <div className="pillar-line" style={{ background: i % 2 === 0 ? '#F5302A' : '#111' }} />
             </div>
           ))}
